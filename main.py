@@ -1,38 +1,51 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, FileResponse
 import cv2
 import numpy as np
 import os
 
 app = FastAPI()
-
-
-SAVE_DIR = "processed_images"
-os.makedirs(SAVE_DIR, exist_ok=True)
+OUT_DIR = "outputs"
+os.makedirs(OUT_DIR, exist_ok=True)
 
 @app.get("/", response_class=HTMLResponse)
-async def main():
-    # Serves the HTML file we created in Step 1
-    with open("templates/index.html", "r") as f:
+async def home():
+    with open("templates/index.html") as f:
         return f.read()
 
-@app.post("/upload")
-async def upload_image(file: UploadFile = File(...)):
+@app.post("/process")
+async def process_image(
+    file: UploadFile = File(...),
+    operation: str = Form(...),
+    parameter: int = Form(...)
+):
     
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
+    data = await file.read()
+    nparr = np.frombuffer(data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
+    if operation == "grayscale":
+        processed = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
+    elif operation == "blur":
+        
+        k_size = parameter if parameter % 2 != 0 else parameter + 1
+        processed = cv2.GaussianBlur(img, (k_size, k_size), 0)
     
-    file_path = os.path.join(SAVE_DIR, f"gray_{file.filename}")
-    cv2.imwrite(file_path, gray_img)
-
+    elif operation == "edges":
+        processed = cv2.Canny(img, 100, parameter)
     
-    return FileResponse(file_path)
+    elif operation == "invert":
+        processed = cv2.bitwise_not(img)
+    
+    else:
+        processed = img 
+    
+    save_path = os.path.join(OUT_DIR, f"dynamic_{file.filename}")
+    cv2.imwrite(save_path, processed)
+    
+    return FileResponse(save_path)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
